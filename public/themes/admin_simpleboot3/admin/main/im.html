@@ -1,0 +1,154 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Jin-chat</title>
+    <link rel="stylesheet" href="__STATIC__/asset/layui/css/layuiv2.css" media="all">
+</head>
+<body>
+    <div>
+
+    </div>
+
+    <script type="text/javascript" src="http://apps.bdimg.com/libs/jquery/2.1.1/jquery.min.js"></script>
+    <script src="__STATIC__/asset/layui/layui.js"></script>
+    <script>
+
+        var socket;
+        var ping;
+        function sendMessage(socket, data){
+            var readyState = socket.readyState;
+            console.log("连接状态码："+readyState);
+            socket.send(data)
+        }
+
+        layui.use('layim', function(layim){
+
+            //建立WebSocket链接
+            socket = new WebSocket("{$server_ws}?token={$Think.session.token}");
+
+            socket.onopen = function(){
+                console.log("websocket is connected")
+                ping = setInterval(function () {
+                    sendMessage(socket,'PING');
+                    console.log("ping...");
+                },1000 * 10)
+
+                layim_init();           //初始化layim
+            };
+
+            socket.onmessage = function(res){
+                console.log('接收到数据'+ res.data);
+                try {
+                    if(res.data === "PONG"){
+                        return false;
+                    }
+                    data = JSON.parse(res.data);
+                    switch (data.type) {
+                        case "friend":
+                        case "group":
+                            console.log(data)
+                            layim.getMessage(data); //res.data即你发送消息传递的数据（阅读：监听发送的消息）
+                            break;
+                        //单纯的弹出
+                        case "layer":
+                            if (data.code == 200) {
+                                layer.msg(data.msg)
+                            } else {
+                                layer.msg(data.msg,function(){})
+                            }
+                            break;
+                        //将新好友添加到列表
+                        case "addList":
+                            console.log(data.data)
+                            layim.addList(data.data);
+                            break;
+                        //好友上下线变更
+                        case "friendStatus" :
+                            console.log(data.status)
+                            layim.setFriendStatus(data.uid, data.status);
+                            break;
+                        //消息盒子
+                        case "msgBox" :
+                            //为了等待页面加载，不然找不到消息盒子图标节点
+                            setTimeout(function(){
+                                if(data.count > 0){
+                                    layim.msgbox(data.count);
+                                }
+                            },1000);
+                            break;
+                        //token过期
+                        case "token_expire":
+                            window.location.reload();
+                            break;
+                        //加群提醒
+                        case "joinNotify":
+                            layim.getMessage(data.data);
+                            break;
+
+                    }
+                } catch (e) {
+                    console.warn(e);
+                }
+
+            };
+            socket.onclose = function(){
+                console.log("websocket is closed")
+                clearInterval(ping)
+            }
+
+
+
+            // layim初始化
+            function layim_init(){
+                //基础配置
+                layim.config({
+                    init: {
+                        url: "{$server_api}/User/userinfo",//接口地址（返回的数据格式见下文）
+                        type: 'get', //默认get，一般可不填
+                        data: {
+                            "token": "{$Think.session.token}"
+                        } //额外参数
+                    }
+                    //获取群员接口（返回的数据格式见下文）
+                    ,members: {
+                        url: "{$server_api}/User/groupMembers" //接口地址（返回的数据格式见下文）
+                        ,type: 'get' //默认get，一般可不填
+                        ,data: {
+                            "token": "{$Think.session.token}"
+                        } //额外参数
+                    }
+                    //上传图片接口（返回的数据格式见下文），若不开启图片上传，剔除该项即可
+                    ,uploadImage: {
+                        url: "{$server_api}/User/upload?type=im_image&path=im" //接口地址
+                        ,type: 'post' //默认post
+
+                    }
+                    //上传文件接口（返回的数据格式见下文），若不开启文件上传，剔除该项即可
+                    ,uploadFile: {
+                        url: "{$server_api}/User/upload?type=im_file&path=file" //接口地址
+                        ,type: 'post' //默认post
+                    }
+                    ,msgbox: "{:url('admin/main/messageBox')}"  //消息盒子页面地址，若不开启，剔除该项即可
+                    ,find: "{:url('admin/main/find')}"//发现页面地址，若不开启，剔除该项即可
+                    ,chatLog: "{:url('admin/main/chatLog')}"//聊天记录页面地址，若不开启，剔除该项即可
+                });
+
+                //监听发送的消息
+                layim.on('sendMessage', function(res){
+                    res.token = "{$Think.session.token}"; //token
+                    console.log(res)
+                    sendMessage(socket,JSON.stringify({
+                        action: 'chatMessage' //随便定义，用于在服务端区分消息类型
+                        ,params: res
+                    }));
+                });
+
+
+
+            }
+        });
+    </script>
+
+</body>
+</html>
